@@ -1,8 +1,10 @@
 #include <Novice.h>
 #include "mt.h"
-#include <imgui.h>
 
 const char kWindowTitle[] = "GC2D_03_オクノ_ソウシ";
+
+const int kWindowWidth = 1280;
+const int kWindowHeight = 720;
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -14,10 +16,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
+	Vector3 v1 = { 1.2f, -3.9f, 2.5f };
+	Vector3 v2 = { 2.8f, 0.4f, -1.3f };
+	Vector3 cross = Cross(v1, v2);
+
 	Vector3 rotate = {};
 	Vector3 translate = {};
-	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
-	Vector3 cameraTranslate = { 0.0f, 1.9f, -6.49f };
+	Vector3 cameraPosition = { 0,0,-5.0f };
 	Vector3 kLocalVertices[3] = {
 		{0.0f, 0.5f, 0.0f,},
 		{0.5f, -0.5f, 0.0f},
@@ -30,11 +35,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	Matrix4x4 projectionMatrix = {};
 	Matrix4x4 worldViewProjectionMatrix = {};
 	Matrix4x4 viewportMatrix = {};
+	Vector3 ScreenVertices[3] = {};
+	Vector3 ndcVertex = {};
 
-	Sphere sphere = {
-		{0.0f, 0.0f, 0.0f},
-		0.5f
-	};
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
 		// フレームの開始
@@ -48,12 +51,33 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		/// ↓更新処理ここから
 		///
 
+		if (keys[DIK_W]) {
+			translate.z += 0.1f;
+		}
+		else if (keys[DIK_S]) {
+			translate.z -= 0.1f;
+		}
+		else if (keys[DIK_A]) {
+			translate.x -= 0.1f;
+		}
+		else if (keys[DIK_D]) {
+			translate.x += 0.1f;
+		}
+
+		rotate.y += 0.1f;
+
+
 		worldMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, rotate, translate);
-		cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
+		cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, cameraPosition);
 		viewMatrix = Inverse(cameraMatrix);
 		projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 		worldViewProjectionMatrix = Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix));
 		viewportMatrix = MakeViewportMatrix(0, 0, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+
+		for (uint32_t i = 0; i < 3; ++i) {
+			ndcVertex = Transform(kLocalVertices[i], worldViewProjectionMatrix);
+			ScreenVertices[i] = Transform(ndcVertex, viewportMatrix);
+		}
 
 		///
 		/// ↑更新処理ここまで
@@ -62,15 +86,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		///
 		/// ↓描画処理ここから
 		///
-		DrawGrid(worldViewProjectionMatrix, viewportMatrix);
-		DrawSphere(sphere, worldViewProjectionMatrix, viewportMatrix, RED);
 
-		ImGui::Begin("Window");
-		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("sphereCenter", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("sphereRadius", &sphere.radius, 0.01f);
-		ImGui::End();
+		VectorScreenPrintf(0, 0, cross, "Cross");
+		Novice::DrawTriangle(int(ScreenVertices[0].x), int(ScreenVertices[0].y), int(ScreenVertices[1].x), int(ScreenVertices[1].y), int(ScreenVertices[2].x), int(ScreenVertices[2].y), RED, kFillModeSolid);
 		///
 		/// ↑描画処理ここまで
 		///
