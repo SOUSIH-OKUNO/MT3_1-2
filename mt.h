@@ -1,10 +1,10 @@
-﻿#pragma once
-
+﻿#pragma  once
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <Novice.h>
 #include <assert.h>
 #include <cmath>
+#include "Vector3.h"
 
 const int kWindowHeight = 720;
 const int kWindowWidth = 1280;
@@ -19,17 +19,34 @@ struct Vector2i final {
 	int y;
 };
 
-struct Vector3 final {
-	float x;
-	float y;
-	float z;
-};
-
 struct Vertex final {
 	float left;
 	float right;
 	float top;
 	float bottom;
+};
+
+//直線
+struct Line final {
+	Vector3 origin; //始点
+	Vector3 diff; //終点への差分ベクトル
+};
+
+//半直線
+struct Ray final {
+	Vector3 origin; //始点
+	Vector3 diff; //終点への差分ベクトル
+};
+
+//線分
+struct Segment final {
+	Vector3 origin; //始点
+	Vector3 diff; //終点への差分ベクトル
+};
+
+struct Plane {
+	Vector3 normal; //法線
+	float distance; //距離
 };
 
 struct ForCorners final {
@@ -841,10 +858,11 @@ inline Matrix4x4 MakeIdentity4x4() {
 /// <param name="x"></param>
 /// <param name="y"></param>
 /// <param name="matrix"></param>
-inline void MatrixScreenPrint(int x, int y, const Matrix4x4& matrix) {
+inline void MatrixScreenPrint(int x, int y, const Matrix4x4& matrix, const char* label) {
+	Novice::ScreenPrintf(x, y, "%s\n", label);
 	for (int row = 0; row < 4; ++row) {
 		for (int column = 0; column < 4; ++column) {
-			Novice::ScreenPrintf(x + column * kColumnWidth, y + row * kRowHeight, "%6.02f", matrix.m[row][column]);
+			Novice::ScreenPrintf(x + column * kColumnWidth, y + (row + 1) * kRowHeight, "%6.02f", matrix.m[row][column]);
 		}
 	}
 }
@@ -1046,6 +1064,15 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
+Matrix4x4 MakeViewProjectionMatrix(Vector3 scale, Vector3 rotate, Vector3 translate, Vector3 cameraScale, Vector3 cameraRotate, Vector3 cameraTranslate) {
+	Matrix4x4 worldMatrix = MakeAffineMatrix(scale, rotate, translate);
+	Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraScale, cameraRotate, cameraTranslate);
+	Matrix4x4 viewMatrix = Inverse(cameraMatrix);
+	Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+	return (Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix)));
+
+}
+
 /// <summary>
 /// クロス積
 /// </summary>
@@ -1175,4 +1202,122 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4 viewportMat
 
 		Novice::DrawLine(int(ScreenStartVertices.x), int(ScreenStartVertices.y), int(ScreenEndVertices.x), int(ScreenEndVertices.y), 0xAAAAAAFF);
 	}
+}
+
+/// <summary>
+/// 正射影ベクトル
+/// </summary>
+/// <param name="v1"></param>
+/// <param name="v2"></param>
+/// <returns></returns>
+Vector3 Project(const Vector3& v1, const Vector3& v2) {
+	Vector3 result = {};
+
+	result.x = Dot(v1, Normalize(v2)) * Normalize(v2).x;
+	result.y = Dot(v1, Normalize(v2)) * Normalize(v2).y;
+	result.z = Dot(v1, Normalize(v2)) * Normalize(v2).z;
+
+	return result;
+}
+
+/// <summary>
+/// 最近接点
+/// </summary>
+/// <param name="point"></param>
+/// <param name="segment"></param>
+/// <returns></returns>
+Vector3 ClosestPoint(const Vector3& point, const Segment& segment) {
+	Vector3 cp = {};
+	Vector3 result = {};
+	return Add(Project(Subtract(point, segment.origin), segment.diff), segment.origin);
+}
+
+Vector3 operator+(Vector3 num1, Vector3 num2) {
+	num1.x += num2.x;
+	num1.y += num2.y;
+	num1.z += num2.z;
+
+	return num1;
+}
+
+Vector3 operator-(Vector3 num1, Vector3 num2) {
+	num1.x -= num2.x;
+	num1.y -= num2.y;
+	num1.z -= num2.z;
+
+	return num1;
+}
+
+/// <summary>
+/// 球同士の衝突判定
+/// </summary>
+/// <param name="s1"></param>
+/// <param name="s2"></param>
+/// <returns></returns>
+bool isCollision(const Sphere& s1, const Sphere& s2) {
+	//二つの球の中心点間の距離を求める
+	float distance = Length(s2.center - s1.center);
+
+	//半径の合計よりも短ければ衝突
+	if (distance <= s1.radius + s2.radius) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 球と平面の衝突判定
+/// </summary>
+/// <param name="sphere"></param>
+/// <param name="plane"></param>
+/// <returns></returns>
+bool isCollision(const Sphere& sphere, const Plane& plane) {
+	if (sphere.radius >= fabsf(Dot(plane.normal, sphere.center) - plane.distance)) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 垂直なベクトルを求める
+/// </summary>
+/// <param name="vector"></param>
+/// <returns></returns>
+Vector3 Perpendicular(const Vector3& vector) {
+	if (vector.x != 0.0f || vector.y != 0.0f) {
+		return { -vector.y, vector.x, 0.0f };
+	}
+
+	return { 0.0f, -vector.z, vector.y };
+}
+
+/// <summary>
+/// 平面の描画
+/// </summary>
+/// <param name="plane"></param>
+/// <param name="viewProjectionMatrix"></param>
+/// <param name="viewportMatrix"></param>
+/// <param name="color"></param>
+void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 center = Multiply(plane.distance, plane.normal);
+	Vector3 perpendiculars[4];
+
+	perpendiculars[0] = Normalize(Perpendicular(plane.normal));
+	perpendiculars[1] = { -perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z };
+	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]);
+	perpendiculars[3] = { -perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z };
+
+	Vector3 points[4];
+	for (int32_t i = 0; i < 4; ++i) {
+		Vector3 extend = Multiply(2.0f, perpendiculars[i]);
+		Vector3 point = Add(center, extend);
+		points[i] = Transform(Transform(point, viewProjectionMatrix), viewportMatrix);
+	}
+
+	Novice::DrawLine(int(points[0].x), int(points[0].y), int(points[2].x), int(points[2].y), color);
+	Novice::DrawLine(int(points[1].x), int(points[1].y), int(points[2].x), int(points[2].y), color);
+	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[1].x), int(points[1].y), color);
+	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[0].x), int(points[0].y), color);
 }
