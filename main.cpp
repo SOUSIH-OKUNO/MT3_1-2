@@ -8,33 +8,31 @@ const char kWindowTitle[] = "GC2D_03_オクノ_ソウシ";
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	// ライブラリの初期化
-	Novice::Initialize(kWindowTitle, kWindowWidth, kWindowHeight);
+	Novice::Initialize(kWindowTitle, 1280, 720);
 
 	// キー入力結果を受け取る箱
 	char keys[256] = { 0 };
 	char preKeys[256] = { 0 };
 
+	Triangle triangle;
+	triangle.vertices[0] = { -1.0f, 0.0f, 0.0f };
+	triangle.vertices[1] = { 0.0f, 1.0f, 0.0f };
+	triangle.vertices[2] = { 1.0f, 0.0f, 0.0f };
+
+	Segment segment{ {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f} };
+	uint32_t color = WHITE;
+
 	Vector3 rotate = {};
 	Vector3 translate = {};
-	Vector3 cameraRotate = { 0.26f, 0.0f, 0.0f };
-	Vector3 cameraTranslate = { 0.0f, 1.9f, -6.49f };
-	Vector3 kLocalVertices[3] = {
-		{0.0f, 0.5f, 0.0f,},
-		{0.5f, -0.5f, 0.0f},
-		{-0.5f, -0.5f, 0.0f}
-	};
+	Vector3 cameraRotate = { 0.0f, 0.0f, 0.0f };
+	Vector3 cameraTranslate = { 0.0f, 0.0f, -9.49f };
+	Vector3 cameraPosition = { 0,0,-5.0f };
 
-	Matrix4x4 worldMatrix = {};
-	Matrix4x4 cameraMatrix = {};
-	Matrix4x4 viewMatrix = {};
-	Matrix4x4 projectionMatrix = {};
-	Matrix4x4 worldViewProjectionMatrix = {};
+	Vector3 start{};
+	Vector3 end{};
+
+	Matrix4x4 viewProjectionMatrix = {};
 	Matrix4x4 viewportMatrix = {};
-
-	Sphere sphere = {
-		{0.0f, 0.0f, 0.0f},
-		0.5f
-	};
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
 		// フレームの開始
@@ -47,13 +45,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		///
 		/// ↓更新処理ここから
 		///
-
-		worldMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, rotate, translate);
-		cameraMatrix = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, cameraRotate, cameraTranslate);
-		viewMatrix = Inverse(cameraMatrix);
-		projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
-		worldViewProjectionMatrix = Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix));
+		viewProjectionMatrix = MakeViewProjectionMatrix({ 1, 1, 1 }, rotate, translate, { 1, 1, 1 }, cameraRotate, cameraTranslate);
 		viewportMatrix = MakeViewportMatrix(0, 0, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+
+		if (isCollision(triangle, segment)) {
+			color = RED;
+		}
+		else {
+			color = WHITE;
+		}
+
+		ImGui::DragFloat3("segment.origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("segment.diff", &segment.diff.x, 0.01f);
+		ImGui::DragFloat3("triangle.vertices[0]", &triangle.vertices[0].x, 0.01f);
+		ImGui::DragFloat3("triangle.vertices[1]", &triangle.vertices[1].x, 0.01f);
+		ImGui::DragFloat3("triangle.vertices[2]", &triangle.vertices[2].x, 0.01f);
+		ImGui::DragFloat3("cameraRotate", &cameraRotate.x, 0.01f);
+		ImGui::DragFloat3("cameraTranslate", &cameraTranslate.x, 0.01f);
 
 		///
 		/// ↑更新処理ここまで
@@ -62,16 +70,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		///
 		/// ↓描画処理ここから
 		///
-		DrawGrid(worldViewProjectionMatrix, viewportMatrix);
-		DrawSphere(sphere, worldViewProjectionMatrix, viewportMatrix, RED);
 
-		ImGui::Begin("Window");
-		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("sphereCenter", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("sphereRadius", &sphere.radius, 0.01f);
-		ImGui::End();
-		///
+		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, color);
+		DrawTriangle(triangle, viewProjectionMatrix, viewportMatrix, WHITE);
+		DrawGrid(viewProjectionMatrix, viewportMatrix);
+
+		/// 
 		/// ↑描画処理ここまで
 		///
 
