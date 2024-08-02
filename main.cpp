@@ -2,7 +2,7 @@
 #include "mt.h"
 #include <imgui.h>
 
-const char kWindowTitle[] = "GC1A_03_オノセ_ユウカ";
+const char kWindowTitle[] = "GC2D_03_オクノ_ソウシ";
 
 // Windowsアプリでのエントリーポイント(main関数)
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
