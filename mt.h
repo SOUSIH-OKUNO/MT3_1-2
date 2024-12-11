@@ -1,10 +1,13 @@
-﻿#pragma once
-
+﻿#pragma  once
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <Novice.h>
 #include <assert.h>
 #include <cmath>
+#include "Vector3.h"
+#include <imgui.h>
+#include <algorithm>
+
 
 const int kWindowHeight = 720;
 const int kWindowWidth = 1280;
@@ -19,17 +22,34 @@ struct Vector2i final {
 	int y;
 };
 
-struct Vector3 final {
-	float x;
-	float y;
-	float z;
-};
-
 struct Vertex final {
 	float left;
 	float right;
 	float top;
 	float bottom;
+};
+
+//直線
+struct Line final {
+	Vector3 origin; //始点
+	Vector3 diff; //終点への差分ベクトル
+};
+
+//半直線
+struct Ray final {
+	Vector3 origin; //始点
+	Vector3 diff; //終点への差分ベクトル
+};
+
+//線分
+struct Segment final {
+	Vector3 origin; //始点
+	Vector3 diff; //終点への差分ベクトル
+};
+
+struct Plane {
+	Vector3 normal; //法線
+	float distance; //距離
 };
 
 struct ForCorners final {
@@ -72,6 +92,15 @@ struct Box {
 struct Sphere {
 	Vector3 center;
 	float radius;
+};
+
+struct Triangle {
+	Vector3 vertices[3]; //頂点
+};
+
+struct AABB {
+	Vector3 min;
+	Vector3 max;
 };
 
 static const int kRowHeight = 20;
@@ -841,10 +870,11 @@ inline Matrix4x4 MakeIdentity4x4() {
 /// <param name="x"></param>
 /// <param name="y"></param>
 /// <param name="matrix"></param>
-inline void MatrixScreenPrint(int x, int y, const Matrix4x4& matrix) {
+inline void MatrixScreenPrint(int x, int y, const Matrix4x4& matrix, const char* label) {
+	Novice::ScreenPrintf(x, y, "%s\n", label);
 	for (int row = 0; row < 4; ++row) {
 		for (int column = 0; column < 4; ++column) {
-			Novice::ScreenPrintf(x + column * kColumnWidth, y + row * kRowHeight, "%6.02f", matrix.m[row][column]);
+			Novice::ScreenPrintf(x + column * kColumnWidth, y + (row + 1) * kRowHeight, "%6.02f", matrix.m[row][column]);
 		}
 	}
 }
@@ -1046,6 +1076,15 @@ Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, f
 	return result;
 }
 
+Matrix4x4 MakeViewProjectionMatrix(Vector3 scale, Vector3 rotate, Vector3 translate, Vector3 cameraScale, Vector3 cameraRotate, Vector3 cameraTranslate) {
+	Matrix4x4 worldMatrix = MakeAffineMatrix(scale, rotate, translate);
+	Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraScale, cameraRotate, cameraTranslate);
+	Matrix4x4 viewMatrix = Inverse(cameraMatrix);
+	Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
+	return (Multiply(worldMatrix, Multiply(viewMatrix, projectionMatrix)));
+
+}
+
 /// <summary>
 /// クロス積
 /// </summary>
@@ -1175,4 +1214,341 @@ void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4 viewportMat
 
 		Novice::DrawLine(int(ScreenStartVertices.x), int(ScreenStartVertices.y), int(ScreenEndVertices.x), int(ScreenEndVertices.y), 0xAAAAAAFF);
 	}
+}
+
+/// <summary>
+/// 正射影ベクトル
+/// </summary>
+/// <param name="v1"></param>
+/// <param name="v2"></param>
+/// <returns></returns>
+Vector3 Project(const Vector3& v1, const Vector3& v2) {
+	Vector3 result = {};
+
+	result.x = Dot(v1, Normalize(v2)) * Normalize(v2).x;
+	result.y = Dot(v1, Normalize(v2)) * Normalize(v2).y;
+	result.z = Dot(v1, Normalize(v2)) * Normalize(v2).z;
+
+	return result;
+}
+
+/// <summary>
+/// 最近接点
+/// </summary>
+/// <param name="point"></param>
+/// <param name="segment"></param>
+/// <returns></returns>
+Vector3 ClosestPoint(const Vector3& point, const Segment& segment) {
+	Vector3 cp = {};
+	Vector3 result = {};
+	return Add(Project(Subtract(point, segment.origin), segment.diff), segment.origin);
+}
+
+Vector3 operator+(Vector3 num1, Vector3 num2) {
+	num1.x += num2.x;
+	num1.y += num2.y;
+	num1.z += num2.z;
+
+	return num1;
+}
+
+Vector3 operator-(Vector3 num1, Vector3 num2) {
+	num1.x -= num2.x;
+	num1.y -= num2.y;
+	num1.z -= num2.z;
+
+	return num1;
+}
+
+/// <summary>
+/// 球同士の衝突判定
+/// </summary>
+/// <param name="s1"></param>
+/// <param name="s2"></param>
+/// <returns></returns>
+bool isCollision(const Sphere& s1, const Sphere& s2) {
+	//二つの球の中心点間の距離を求める
+	float distance = Length(s2.center - s1.center);
+
+	//半径の合計よりも短ければ衝突
+	if (distance <= s1.radius + s2.radius) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 球と平面の衝突判定
+/// </summary>
+/// <param name="sphere"></param>
+/// <param name="plane"></param>
+/// <returns></returns>
+bool isCollision(const Sphere& sphere, const Plane& plane) {
+	if (sphere.radius >= fabsf(Dot(plane.normal, sphere.center) - plane.distance)) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 垂直なベクトルを求める
+/// </summary>
+/// <param name="vector"></param>
+/// <returns></returns>
+Vector3 Perpendicular(const Vector3& vector) {
+	if (vector.x != 0.0f || vector.y != 0.0f) {
+		return { -vector.y, vector.x, 0.0f };
+	}
+
+	return { 0.0f, -vector.z, vector.y };
+}
+
+/// <summary>
+/// 平面の描画
+/// </summary>
+/// <param name="plane"></param>
+/// <param name="viewProjectionMatrix"></param>
+/// <param name="viewportMatrix"></param>
+/// <param name="color"></param>
+void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 center = Multiply(plane.distance, plane.normal);
+	Vector3 perpendiculars[4];
+
+	perpendiculars[0] = Normalize(Perpendicular(plane.normal));
+	perpendiculars[1] = { -perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z };
+	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]);
+	perpendiculars[3] = { -perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z };
+
+	Vector3 points[4];
+	for (int32_t i = 0; i < 4; ++i) {
+		Vector3 extend = Multiply(2.0f, perpendiculars[i]);
+		Vector3 point = Add(center, extend);
+		points[i] = Transform(Transform(point, viewProjectionMatrix), viewportMatrix);
+	}
+
+	Novice::DrawLine(int(points[0].x), int(points[0].y), int(points[2].x), int(points[2].y), color);
+	Novice::DrawLine(int(points[1].x), int(points[1].y), int(points[2].x), int(points[2].y), color);
+	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[1].x), int(points[1].y), color);
+	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[0].x), int(points[0].y), color);
+}
+
+/// <summary>
+/// 直線と平面の衝突判定
+/// </summary>
+/// <param name="line"></param>
+/// <param name="plane"></param>
+/// <returns></returns>
+bool IsCollision(const Line& line, const Plane& plane) {
+	float dot = Dot(plane.normal, line.diff);
+
+	if (dot == 0.0f) {
+		return false;
+	}
+
+	float t = (plane.distance - Dot(line.origin, plane.normal)) / dot;
+
+	if (t == -1.0f) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 半直線と平面の衝突判定
+/// </summary>
+/// <param name="ray"></param>
+/// <param name="plane"></param>
+/// <returns></returns>
+bool IsCollision(const Ray& ray, const Plane& plane) {
+	float dot = Dot(plane.normal, ray.diff);
+
+	if (dot == 0.0f) {
+		return false;
+	}
+
+	float t = (plane.distance - Dot(ray.origin, plane.normal)) / dot;
+
+	if (t == 2.0f) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 線分と平面の衝突判定
+/// </summary>
+/// <param name="segment"></param>
+/// <param name="plane"></param>
+/// <returns></returns>
+bool IsCollision(const Segment& segment, const Plane& plane) {
+	float dot = Dot(plane.normal, segment.diff);
+
+	if (dot == 0.0f) {
+		return false;
+	}
+
+	float t = (plane.distance - Dot(segment.origin, plane.normal)) / dot;
+
+	if (t >= 0.0f && t <= 1.0f) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// 直線の描画
+/// </summary>
+/// <param name="line"></param>
+/// <param name="viewProjectionMatrix"></param>
+/// <param name="viewportMatrix"></param>
+/// <param name="color"></param>
+void DrawSegment(const Line& line, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 start = Transform(Transform(line.origin, viewProjectionMatrix), viewportMatrix);
+	Vector3 end = Transform(Transform(Add(line.origin, line.diff), viewProjectionMatrix), viewportMatrix);
+
+	Novice::DrawLine(int(start.x), int(start.y), int(end.x), int(end.y), color);
+}
+
+/// <summary>
+/// 半直線の描画
+/// </summary>
+/// <param name="ray"></param>
+/// <param name="viewProjectionMatrix"></param>
+/// <param name="viewportMatrix"></param>
+/// <param name="color"></param>
+void DrawSegment(const Ray& ray, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 start = Transform(Transform(ray.origin, viewProjectionMatrix), viewportMatrix);
+	Vector3 end = Transform(Transform(Add(ray.origin, ray.diff), viewProjectionMatrix), viewportMatrix);
+
+	Novice::DrawLine(int(start.x), int(start.y), int(end.x), int(end.y), color);
+}
+
+/// <summary>
+/// 線分の描画
+/// </summary>
+/// <param name="segment"></param>
+/// <param name="viewProjectionMatrix"></param>
+/// <param name="viewportMatrix"></param>
+/// <param name="color"></param>
+void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 start = Transform(Transform(segment.origin, viewProjectionMatrix), viewportMatrix);
+	Vector3 end = Transform(Transform(Add(segment.origin, segment.diff), viewProjectionMatrix), viewportMatrix);
+
+	Novice::DrawLine(int(start.x), int(start.y), int(end.x), int(end.y), color);
+}
+
+/// <summary>
+/// 三角形と線分の衝突判定
+/// </summary>
+/// <param name="triangle"></param>
+/// <param name="segment"></param>
+/// <returns></returns>
+//bool IsCollision(const Triangle& triangle, const Segment& segment) {
+//	Vector3 v01 = triangle.vertices[1] - triangle.vertices[0];
+//	Vector3 v12 = triangle.vertices[2] - triangle.vertices[1];
+//	Vector3 v20 = triangle.vertices[0] - triangle.vertices[2];
+//
+//	float t =
+//
+//		Vector3 p = segment.origin +
+//
+//		Vector3 v0p{}, v1p{}, v2p{};
+//
+//	return false;
+//}
+
+void DrawTriangle(const Triangle& triangle, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 start[3];
+	Vector3 end[3];
+
+	for (uint32_t i = 0; i < 3; i++) {
+		start[i] = Transform(Transform(triangle.vertices[i], viewProjectionMatrix), viewportMatrix);
+		end[i] = Transform(Transform(triangle.vertices[(i + 1) % 3], viewProjectionMatrix), viewportMatrix);
+		Novice::DrawLine(int(start[i].x), int(start[i].y), int(end[i].x), int(end[i].y), color);
+	}
+}
+
+/// <summary>
+/// AABB同士の衝突判定
+/// </summary>
+/// <param name="aabb1"></param>
+/// <param name="aabb2"></param>
+/// <returns></returns>
+bool IsCollision(const AABB& aabb1, const AABB& aabb2) {
+	if ((aabb1.min.x <= aabb2.max.x && aabb1.max.x >= aabb2.min.x) &&
+		(aabb1.min.y <= aabb2.max.y && aabb1.max.y >= aabb2.min.y) &&
+		(aabb1.min.z <= aabb2.max.z && aabb1.max.z >= aabb2.min.z)) {
+		return true;
+	}
+
+	return false;
+}
+
+/// <summary>
+/// AABBの描画
+/// </summary>
+/// <param name="aabb"></param>
+/// <param name="viewProjectionMatrix"></param>
+/// <param name="viewportMatrix"></param>
+/// <param name="color"></param>
+void DrawAABB(const AABB& aabb, const Matrix4x4& viewProjectionMatrix, const Matrix4x4 viewportMatrix, uint32_t color) {
+	Vector3 end[12]{};
+	Vector3 start[12]{};
+
+	start[0] = Transform(Transform(aabb.min, viewProjectionMatrix), viewportMatrix);
+	end[0] = Transform(Transform({ aabb.min.x, aabb.min.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	start[1] = Transform(Transform(aabb.min, viewProjectionMatrix), viewportMatrix);
+	end[1] = Transform(Transform({ aabb.min.x, aabb.max.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	start[2] = Transform(Transform({ aabb.min.x, aabb.max.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	end[2] = Transform(Transform({ aabb.min.x, aabb.max.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	start[3] = Transform(Transform({ aabb.min.x, aabb.max.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	end[3] = Transform(Transform({ aabb.min.x, aabb.min.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	start[4] = Transform(Transform({ aabb.min.x, aabb.min.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	end[4] = Transform(Transform({ aabb.max.x, aabb.min.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	start[5] = Transform(Transform(aabb.min, viewProjectionMatrix), viewportMatrix);
+	end[5] = Transform(Transform({ aabb.max.x, aabb.min.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	start[6] = Transform(Transform({ aabb.min.x, aabb.max.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	end[6] = Transform(Transform({ aabb.max.x, aabb.max.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	start[7] = Transform(Transform({ aabb.min.x, aabb.max.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	end[7] = Transform(Transform({ aabb.max.x, aabb.max.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	start[8] = Transform(Transform(aabb.max, viewProjectionMatrix), viewportMatrix);
+	end[8] = Transform(Transform({ aabb.max.x, aabb.max.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	start[9] = Transform(Transform({ aabb.max.x, aabb.max.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	end[9] = Transform(Transform({ aabb.max.x, aabb.min.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	start[10] = Transform(Transform({ aabb.max.x, aabb.min.y, aabb.min.z }, viewProjectionMatrix), viewportMatrix);
+	end[10] = Transform(Transform({ aabb.max.x, aabb.min.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	start[11] = Transform(Transform({ aabb.max.x, aabb.min.y, aabb.max.z }, viewProjectionMatrix), viewportMatrix);
+	end[11] = Transform(Transform(aabb.max, viewProjectionMatrix), viewportMatrix);
+
+	for (uint32_t i = 0; i < 12; i++) {
+		Novice::DrawLine(int(start[i].x), int(start[i].y), int(end[i].x), int(end[i].y), color);
+	}
+}
+
+/// <summary>
+/// AABBと球の衝突判定
+/// </summary>
+/// <param name="aabb"></param>
+/// <param name="sphere"></param>
+/// <returns></returns>
+bool IsCollision(const AABB& aabb, const Sphere& sphere) {
+	//最近接点を求める
+	Vector3 closestPoint{ std::clamp(sphere.center.x, aabb.min.x, aabb.max.x),
+						std::clamp(sphere.center.y, aabb.min.y, aabb.max.y),
+						std::clamp(sphere.center.z, aabb.min.z, aabb.max.z) };
+
+	//最近接点と球の中心との距離を求める
+	float distance = Length(closestPoint - sphere.center);
+
+	//距離が半径よりも小さければ衝突
+	if (distance <= sphere.radius) {
+		return true;
+	}
+
+	return false;
 }
